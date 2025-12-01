@@ -208,12 +208,11 @@ with st.expander("Deployment / troubleshooting tips"):
     )
 '''
 
-
-# Web/steanlit_app.py (patched)
-# Robust Streamlit app for Customer Churn Prediction
-# - Safe model loading (relative path, optional download via MODEL_DOWNLOAD_URL)
-# - Lazy cached model loading to avoid import-time crashes
-# - Friendly UI and error handling
+# Web/steanlit_app.py
+# Clean, fixed Streamlit app for Customer Churn Prediction
+# - st.set_page_config runs first
+# - robust model loader (can download via MODEL_DOWNLOAD_URL)
+# - no Streamlit calls before set_page_config
 
 import os
 import pathlib
@@ -223,17 +222,20 @@ import requests
 import streamlit as st
 import pandas as pd
 
+# Ensure page config is the very first Streamlit call
+st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
+
 LOG = logging.getLogger(__name__)
 
 # ------------------ Model loader config ------------------
 HERE = pathlib.Path(__file__).resolve().parent
-# repo layout: /<repo_root>/model/churn_model.pkl
-# Updated: use repo root (no model folder needed)
-MODEL_DIR = (HERE / ".." ).resolve()
-MODEL_DIR.mkdir(parents=True, exist_ok=True)
+# If your model file is in repo root (you said you placed churn_model.pkl in main),
+# use repo root:
 MODEL_FILENAME = "churn_model.pkl"
-# Updated path: churn_model.pkl lives directly in repo root
 MODEL_PATH = (HERE / ".." / MODEL_FILENAME).resolve()
+
+# Ensure parent dir exists (safe no-op if file in repo root)
+MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def download_file(url: str, dest: pathlib.Path, chunk_size: int = 8192):
@@ -275,7 +277,7 @@ def ensure_model_available():
         "Model file not found. Expected:\n\n"
         f"  {MODEL_PATH}\n\n"
         "Options to fix:\n"
-        "  • Add the file to your repo under `model/churn_model.pkl` and push.\n"
+        "  • Add the file to your repo under `churn_model.pkl` at the repository root and push.\n"
         "  • Or host the file (S3/GCS/GitHub release) and set the MODEL_DOWNLOAD_URL env var\n"
         "    to a direct download URL in the Streamlit app settings."
     )
@@ -289,11 +291,10 @@ def get_model():
 
 
 # ------------------ Streamlit UI ------------------
-st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
 st.title("Customer Churn Prediction")
 st.write("Enter customer data and click **Predict** to determine churn likelihood.")
 
-# Input widgets (kept similar to original but with types enforced)
+# Input widgets
 creditscore = st.number_input('Credit Score', min_value=0, step=1, value=600)
 geography = st.text_input('Geography', value='France')
 gender = st.text_input('Gender', value='Male')
@@ -306,20 +307,18 @@ isactivemember = st.number_input('Is Active Member (0 or 1)', min_value=0, max_v
 estimatedsalary = st.number_input('Estimated Salary', min_value=0.0, step=1.0, value=50000.0, format="%f")
 
 # Build input DataFrame in the format the model expects
-input_data = pd.DataFrame([
-    {
-        'creditscore': int(creditscore),
-        'geography': str(geography),
-        'gender': str(gender),
-        'age': int(age),
-        'tenure': int(tenure),
-        'balance': float(balance),
-        'numofproducts': int(numofproducts),
-        'hascrcard': int(hascrcard),
-        'isactivemember': int(isactivemember),
-        'estimatedsalary': float(estimatedsalary)
-    }
-])
+input_data = pd.DataFrame([{
+    'creditscore': int(creditscore),
+    'geography': str(geography),
+    'gender': str(gender),
+    'age': int(age),
+    'tenure': int(tenure),
+    'balance': float(balance),
+    'numofproducts': int(numofproducts),
+    'hascrcard': int(hascrcard),
+    'isactivemember': int(isactivemember),
+    'estimatedsalary': float(estimatedsalary)
+}])
 
 st.write("---")
 st.subheader("Input preview")
@@ -358,11 +357,11 @@ if st.button('Predict'):
         LOG.exception("Prediction failed: %s", e)
         st.error(f"Prediction failed: {e}")
 
-
 # Optional: show troubleshooting/helpful hints
 with st.expander("Deployment / troubleshooting tips"):
     st.markdown(
-        "- If you see `Model file not found`, add `model/churn_model.pkl` to your repo or set `MODEL_DOWNLOAD_URL` env var.\n"
+        "- If you see `Model file not found`, add `churn_model.pkl` to your repo root or set `MODEL_DOWNLOAD_URL` env var.\n"
         "- For large models, consider hosting on S3 and using `MODEL_DOWNLOAD_URL`.\n"
         "- If you changed feature names during training, make sure the input column names above exactly match those used when training the model."
     )
+
