@@ -209,10 +209,10 @@ with st.expander("Deployment / troubleshooting tips"):
 '''
 
 # Web/steanlit_app.py
-# Clean Streamlit app for Customer Churn Prediction
-# - set_page_config is the very first Streamlit call
-# - robust model loader (can download via MODEL_DOWNLOAD_URL)
-# - safe lazy loading with st.cache_resource
+# Clean, working Streamlit app for Customer Churn Prediction
+# - st.set_page_config is the very FIRST Streamlit call
+# - robust model loader (downloads if MODEL_DOWNLOAD_URL set)
+# - lazy cached model loading with st.cache_resource
 
 import os
 import pathlib
@@ -230,11 +230,11 @@ LOG = logging.getLogger(__name__)
 
 # ------------------ Model loader config ------------------
 HERE = pathlib.Path(__file__).resolve().parent
-# If churn_model.pkl is in repo root (you uploaded it there), this path points to it.
+# If your model file is in the repository root, place churn_model.pkl there.
 MODEL_FILENAME = "churn_model.pkl"
 MODEL_PATH = (HERE / ".." / MODEL_FILENAME).resolve()
 
-# Ensure parent dir exists (safe no-op)
+# Ensure parent dir exists (no-op if root)
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -284,7 +284,7 @@ def ensure_model_available():
     raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
 
-# Now safe to use Streamlit's caching decorator (page config already set)
+# Safe to use Streamlit caching now
 @st.cache_resource
 def get_model():
     return ensure_model_available()
@@ -327,24 +327,19 @@ st.dataframe(input_data)
 # Prediction button
 if st.button('Predict'):
     try:
-        # Load model (cached)
         try:
             model = get_model()
         except FileNotFoundError:
-            # ensure_model_available already showed a st.error; stop execution
             st.stop()
 
-        # Make prediction
         prediction = model.predict(input_data)
 
         if hasattr(model, "predict_proba"):
             proba = model.predict_proba(input_data)
-            # If binary, take second column as prob of class 1
             prob_of_churn = float(proba[0][1]) if proba.shape[1] > 1 else float(proba[0][0])
         else:
             prob_of_churn = None
 
-        # Interpret prediction: assume 1 -> churn, 0 -> no churn
         pred_label = int(prediction[0])
         if pred_label == 1:
             st.warning('Prediction: Customer is **likely** to leave the company (churn).')
@@ -358,7 +353,7 @@ if st.button('Predict'):
         LOG.exception("Prediction failed: %s", e)
         st.error(f"Prediction failed: {e}")
 
-# Optional: show troubleshooting/helpful hints
+# Troubleshooting hints
 with st.expander("Deployment / troubleshooting tips"):
     st.markdown(
         "- If you see `Model file not found`, add `churn_model.pkl` to your repo root or set `MODEL_DOWNLOAD_URL` env var.\n"
