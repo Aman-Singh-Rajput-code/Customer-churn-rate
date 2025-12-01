@@ -208,11 +208,9 @@ with st.expander("Deployment / troubleshooting tips"):
     )
 '''
 
+
 # Web/steanlit_app.py
-# Clean, working Streamlit app for Customer Churn Prediction
-# - st.set_page_config is the very FIRST Streamlit call
-# - robust model loader (downloads if MODEL_DOWNLOAD_URL set)
-# - lazy cached model loading with st.cache_resource
+# Minimal, safe Streamlit app — set_page_config is the FIRST Streamlit call.
 
 import os
 import pathlib
@@ -222,24 +220,19 @@ import requests
 import streamlit as st
 import pandas as pd
 
-# ------------------ IMPORTANT: set page config first ------------------
+# IMPORTANT: this must be the first Streamlit command in the file
 st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
-# ----------------------------------------------------------------------
 
 LOG = logging.getLogger(__name__)
 
-# ------------------ Model loader config ------------------
+# Model path (repo root)
 HERE = pathlib.Path(__file__).resolve().parent
-# If your model file is in the repository root, place churn_model.pkl there.
 MODEL_FILENAME = "churn_model.pkl"
 MODEL_PATH = (HERE / ".." / MODEL_FILENAME).resolve()
-
-# Ensure parent dir exists (no-op if root)
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def download_file(url: str, dest: pathlib.Path, chunk_size: int = 8192):
-    """Stream-download a file to dest (overwrites if exists)."""
     LOG.info("Downloading model from %s to %s", url, dest)
     with requests.get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
@@ -251,62 +244,51 @@ def download_file(url: str, dest: pathlib.Path, chunk_size: int = 8192):
 
 
 def _load_model_from_disk(path: pathlib.Path):
-    LOG.info("Attempting to load model from %s", path)
+    LOG.info("Loading model from %s", path)
     return joblib.load(path)
 
 
 def ensure_model_available():
-    """Ensure model exists locally: load if present or download if env var provided."""
-    # 1) If file exists already, load it
     if MODEL_PATH.exists():
         return _load_model_from_disk(MODEL_PATH)
 
-    # 2) Try to download if MODEL_DOWNLOAD_URL env var is set
     download_url = os.environ.get("MODEL_DOWNLOAD_URL")
     if download_url:
         try:
-            LOG.info("Model not found locally. Downloading from MODEL_DOWNLOAD_URL...")
             download_file(download_url, MODEL_PATH)
-            LOG.info("Download complete, attempting load...")
             return _load_model_from_disk(MODEL_PATH)
-        except Exception as e:
-            LOG.exception("Failed downloading or loading model from %s: %s", download_url, e)
+        except Exception:
+            LOG.exception("Download/load failed for %s", download_url)
 
-    # 3) Nothing worked — show helpful UI message and stop the app
+    # show message (safe now since page config was set)
     st.error(
-        "Model file not found. Expected:\n\n"
+        "Model not found. Expected:\n\n"
         f"  {MODEL_PATH}\n\n"
-        "Options to fix:\n"
-        "  • Add the file to your repo root with the name `churn_model.pkl` and push.\n"
-        "  • Or host the file (S3/GCS/GitHub release) and set the MODEL_DOWNLOAD_URL env var\n"
-        "    to a direct download URL in the Streamlit app settings."
+        "Put churn_model.pkl in repo root or set MODEL_DOWNLOAD_URL env var."
     )
     raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
 
-# Safe to use Streamlit caching now
 @st.cache_resource
 def get_model():
     return ensure_model_available()
 
 
-# ------------------ Streamlit UI ------------------
+# UI
 st.title("Customer Churn Prediction")
-st.write("Enter customer data and click **Predict** to determine churn likelihood.")
+st.write("Enter customer data and click Predict.")
 
-# Input widgets
-creditscore = st.number_input('Credit Score', min_value=0, step=1, value=600)
+creditscore = st.number_input('Credit Score', value=600, min_value=0, step=1)
 geography = st.text_input('Geography', value='France')
 gender = st.text_input('Gender', value='Male')
-age = st.number_input('Age', min_value=0, max_value=120, step=1, value=30)
-tenure = st.number_input('Tenure', min_value=0, max_value=10, step=1, value=1)
-balance = st.number_input('Balance', min_value=0.0, step=1.0, value=0.0, format="%f")
-numofproducts = st.number_input('Number of Products', min_value=0, max_value=10, step=1, value=1)
-hascrcard = st.number_input('Has Credit Card (0 or 1)', min_value=0, max_value=1, step=1, value=1)
-isactivemember = st.number_input('Is Active Member (0 or 1)', min_value=0, max_value=1, step=1, value=1)
-estimatedsalary = st.number_input('Estimated Salary', min_value=0.0, step=1.0, value=50000.0, format="%f")
+age = st.number_input('Age', value=30, min_value=0, max_value=120, step=1)
+tenure = st.number_input('Tenure', value=1, min_value=0, max_value=10, step=1)
+balance = st.number_input('Balance', value=0.0, format="%f", step=1.0)
+numofproducts = st.number_input('Number of Products', value=1, min_value=0, max_value=10, step=1)
+hascrcard = st.number_input('Has Credit Card (0/1)', value=1, min_value=0, max_value=1, step=1)
+isactivemember = st.number_input('Is Active Member (0/1)', value=1, min_value=0, max_value=1, step=1)
+estimatedsalary = st.number_input('Estimated Salary', value=50000.0, format="%f", step=1.0)
 
-# Build input DataFrame in the format the model expects
 input_data = pd.DataFrame([{
     'creditscore': int(creditscore),
     'geography': str(geography),
@@ -324,39 +306,22 @@ st.write("---")
 st.subheader("Input preview")
 st.dataframe(input_data)
 
-# Prediction button
 if st.button('Predict'):
     try:
-        try:
-            model = get_model()
-        except FileNotFoundError:
-            st.stop()
+        model = get_model()
+    except FileNotFoundError:
+        st.stop()
 
-        prediction = model.predict(input_data)
+    prediction = model.predict(input_data)
+    prob_of_churn = None
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(input_data)
+        prob_of_churn = float(proba[0][1]) if proba.shape[1] > 1 else float(proba[0][0])
 
-        if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(input_data)
-            prob_of_churn = float(proba[0][1]) if proba.shape[1] > 1 else float(proba[0][0])
-        else:
-            prob_of_churn = None
-
-        pred_label = int(prediction[0])
-        if pred_label == 1:
-            st.warning('Prediction: Customer is **likely** to leave the company (churn).')
-        else:
-            st.success('Prediction: Customer is **not** likely to leave the company (no churn).')
-
-        if prob_of_churn is not None:
-            st.info(f"Model confidence (P(churn)=): {prob_of_churn:.3f}")
-
-    except Exception as e:
-        LOG.exception("Prediction failed: %s", e)
-        st.error(f"Prediction failed: {e}")
-
-# Troubleshooting hints
-with st.expander("Deployment / troubleshooting tips"):
-    st.markdown(
-        "- If you see `Model file not found`, add `churn_model.pkl` to your repo root or set `MODEL_DOWNLOAD_URL` env var.\n"
-        "- For large models, consider hosting on S3 and using `MODEL_DOWNLOAD_URL`.\n"
-        "- If you changed feature names during training, make sure the input column names above exactly match those used when training the model."
-    )
+    pred_label = int(prediction[0])
+    if pred_label == 1:
+        st.warning('Prediction: Customer is likely to leave (churn).')
+    else:
+        st.success('Prediction: Customer is not likely to leave (no churn).')
+    if prob_of_churn is not None:
+        st.info(f"P(churn) = {prob_of_churn:.3f}")
