@@ -209,10 +209,7 @@ with st.expander("Deployment / troubleshooting tips"):
 '''
 
 # Web/steanlit_app.py
-# Clean, fixed Streamlit app for Customer Churn Prediction
-# - st.set_page_config runs first
-# - robust model loader (can download via MODEL_DOWNLOAD_URL)
-# - no Streamlit calls before set_page_config
+# Fixed Streamlit app - ensures set_page_config is the first Streamlit call.
 
 import os
 import pathlib
@@ -222,19 +219,19 @@ import requests
 import streamlit as st
 import pandas as pd
 
-# Ensure page config is the very first Streamlit call
+# ------------------ IMPORTANT: page config must be the first Streamlit call ------------------
 st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
+# ---------------------------------------------------------------------------------------------
 
 LOG = logging.getLogger(__name__)
 
 # ------------------ Model loader config ------------------
 HERE = pathlib.Path(__file__).resolve().parent
-# If your model file is in repo root (you said you placed churn_model.pkl in main),
-# use repo root:
+# The model file is expected at repo root: <repo_root>/churn_model.pkl
 MODEL_FILENAME = "churn_model.pkl"
 MODEL_PATH = (HERE / ".." / MODEL_FILENAME).resolve()
 
-# Ensure parent dir exists (safe no-op if file in repo root)
+# Ensure parent dir exists (safe no-op if file already in repo root)
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -272,19 +269,19 @@ def ensure_model_available():
         except Exception as e:
             LOG.exception("Failed downloading or loading model from %s: %s", download_url, e)
 
-    # 3) Nothing worked — show helpful UI message and stop the app
+    # 3) Nothing worked — show helpful UI message (only now that page_config is set)
     st.error(
         "Model file not found. Expected:\n\n"
         f"  {MODEL_PATH}\n\n"
         "Options to fix:\n"
-        "  • Add the file to your repo under `churn_model.pkl` at the repository root and push.\n"
+        "  • Add the file to your repo root with the name `churn_model.pkl` and push.\n"
         "  • Or host the file (S3/GCS/GitHub release) and set the MODEL_DOWNLOAD_URL env var\n"
         "    to a direct download URL in the Streamlit app settings."
     )
     raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
 
-# Lazy cached loader so the model is only loaded once per process
+# Now safe to use Streamlit's caching decorator (page config was already set above)
 @st.cache_resource
 def get_model():
     return ensure_model_available()
@@ -331,6 +328,7 @@ if st.button('Predict'):
         try:
             model = get_model()
         except FileNotFoundError:
+            # ensure_model_available already showed a st.error; stop execution
             st.stop()
 
         # Make prediction
@@ -364,4 +362,3 @@ with st.expander("Deployment / troubleshooting tips"):
         "- For large models, consider hosting on S3 and using `MODEL_DOWNLOAD_URL`.\n"
         "- If you changed feature names during training, make sure the input column names above exactly match those used when training the model."
     )
-
