@@ -209,7 +209,10 @@ with st.expander("Deployment / troubleshooting tips"):
 '''
 
 # Web/steanlit_app.py
-# Fixed Streamlit app - ensures set_page_config is the first Streamlit call.
+# Clean Streamlit app for Customer Churn Prediction
+# - set_page_config is the very first Streamlit call
+# - robust model loader (can download via MODEL_DOWNLOAD_URL)
+# - safe lazy loading with st.cache_resource
 
 import os
 import pathlib
@@ -219,19 +222,19 @@ import requests
 import streamlit as st
 import pandas as pd
 
-# ------------------ IMPORTANT: page config must be the first Streamlit call ------------------
+# ------------------ IMPORTANT: set page config first ------------------
 st.set_page_config(page_title="Customer Churn Prediction", layout="centered")
-# ---------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 
 LOG = logging.getLogger(__name__)
 
 # ------------------ Model loader config ------------------
 HERE = pathlib.Path(__file__).resolve().parent
-# The model file is expected at repo root: <repo_root>/churn_model.pkl
+# If churn_model.pkl is in repo root (you uploaded it there), this path points to it.
 MODEL_FILENAME = "churn_model.pkl"
 MODEL_PATH = (HERE / ".." / MODEL_FILENAME).resolve()
 
-# Ensure parent dir exists (safe no-op if file already in repo root)
+# Ensure parent dir exists (safe no-op)
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -269,7 +272,7 @@ def ensure_model_available():
         except Exception as e:
             LOG.exception("Failed downloading or loading model from %s: %s", download_url, e)
 
-    # 3) Nothing worked — show helpful UI message (only now that page_config is set)
+    # 3) Nothing worked — show helpful UI message and stop the app
     st.error(
         "Model file not found. Expected:\n\n"
         f"  {MODEL_PATH}\n\n"
@@ -281,7 +284,7 @@ def ensure_model_available():
     raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
 
-# Now safe to use Streamlit's caching decorator (page config was already set above)
+# Now safe to use Streamlit's caching decorator (page config already set)
 @st.cache_resource
 def get_model():
     return ensure_model_available()
